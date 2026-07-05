@@ -139,8 +139,22 @@ function attackable(side){
   return [...res];
 }
 
+function unlockValue(n){
+  const ol=openLv(), mine=mineSet();
+  let vals=[];
+  for (const v of G[n]){
+    if (Z[v].level>ol || Z[v].level===1 || state[v]==='mine') continue;
+    const already = mine.some(m=>G[m].includes(v));
+    if (!already) vals.push([SCORE[Z[v].level], v]);
+  }
+  vals.sort((a,b)=>b[0]-a[0]);
+  const top = vals.slice(0,4);
+  return [0.5*top.reduce((s,x)=>s+x[0],0), top.map(x=>x[1])];
+}
 function stratBonus(n, wk){
   let b=0, why=[];
+  const [ub,uz]=unlockValue(n);
+  if (ub>0){ b+=ub; why.push('解锁'+uz.join('/')); }
   if (LOCKSET.includes(n)){ b+=4000; why.push('锁死组合'); }
   if (['5-8','5-9'].includes(n) && wk<=5){ b+=3000; why.push('7级环门户'); }
   if (G[n].includes('8-1')){ b+=2000; why.push('8-1入口'); }
