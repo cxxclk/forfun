@@ -6,7 +6,7 @@
 <title>攻城战况计算器</title>
 <style>
   body{margin:0;font-family:system-ui,'Microsoft YaHei',sans-serif;background:#1e2119;color:#e8e6d9;display:flex;height:100vh;overflow:hidden}
-  #side{width:330px;padding:12px;background:#2d3226;overflow-y:auto;flex-shrink:0;font-size:13.5px;line-height:1.55}
+  #side{width:clamp(330px,26vw,480px);padding:12px;background:#2d3226;overflow-y:auto;flex-shrink:0;font-size:13.5px;line-height:1.55}
   #main{flex:1;overflow:auto;position:relative}
   #stage{position:relative}
   #stage img{display:block;user-select:none;pointer-events:none;opacity:.85}
@@ -24,7 +24,8 @@
   text{font-size:12px;font-weight:bold;fill:#fff;paint-order:stroke;stroke:#000;stroke-width:3px;pointer-events:none}
   label{margin-right:8px}
   table{border-collapse:collapse;width:100%;font-size:12.5px}
-  td,th{border:1px solid #4a5140;padding:3px 5px;text-align:left}
+  td,th{border:1px solid #4a5140;padding:3px 6px;text-align:left}
+  td:nth-child(1),td:nth-child(2),td:nth-child(3),th:nth-child(1),th:nth-child(2),th:nth-child(3){white-space:nowrap;width:1%}
 </style>
 </head>
 <body>
