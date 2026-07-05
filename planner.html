@@ -8,7 +8,7 @@
   body{margin:0;font-family:system-ui,'Microsoft YaHei',sans-serif;background:#1e2119;color:#e8e6d9;display:flex;height:100vh;overflow:hidden}
   #side{width:330px;padding:12px;background:#2d3226;overflow-y:auto;flex-shrink:0;font-size:13.5px;line-height:1.55}
   #main{flex:1;overflow:auto;position:relative}
-  #stage{position:relative;transform-origin:0 0}
+  #stage{position:relative}
   #stage img{display:block;user-select:none;pointer-events:none;opacity:.85}
   svg{position:absolute;left:0;top:0}
   h2{font-size:16px;margin:2px 0 8px;color:#a8c686}
@@ -44,7 +44,7 @@
     <button onclick="clearAll()" class="warn">清空</button>
     <button onclick="exportState()">导出战况</button>
     <button onclick="importState()">导入</button>
-    缩放 <input type="range" id="zoom" min="0.4" max="2.5" step="0.1" value="0.8" style="width:90px">
+    缩放 <input type="range" id="zoom" min="0.4" max="3" step="0.05" value="1" style="width:90px">
   </div>
   <div id="score" class="box"></div>
   <h3>推荐进攻（前8）</h3><div id="reco" class="box sm"></div>
@@ -84,7 +84,7 @@ img.onload = () => {
   cv.getContext('2d').fillRect(0,0,cv.width,cv.height);
   svg.setAttribute('width', img.naturalWidth);
   svg.setAttribute('height', img.naturalHeight);
-  applyZoom(); draw();
+  fitZoom(); draw();
 };
 if (img.complete && img.naturalWidth) img.onload();
 
@@ -259,9 +259,17 @@ function importState(){
   catch(e){ alert('格式错误'); }
 }
 function applyZoom(){
-  document.getElementById('stage').style.transform=`scale(${document.getElementById('zoom').value})`;
+  document.getElementById('stage').style.zoom = document.getElementById('zoom').value;
+}
+function fitZoom(){
+  if (!img.naturalWidth) return;
+  const main = document.getElementById('main');
+  const s = Math.min(main.clientWidth/img.naturalWidth, main.clientHeight/img.naturalHeight);
+  document.getElementById('zoom').value = Math.max(0.4, Math.min(3, s)).toFixed(2);
+  applyZoom();
 }
 document.getElementById('zoom').addEventListener('input', applyZoom);
+window.addEventListener('resize', fitZoom);
 recalc();
 </script>
 </body>
