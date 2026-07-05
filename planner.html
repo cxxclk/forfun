@@ -54,7 +54,7 @@
   <h3>寻路</h3>
   <div class="sm">目标 <select id="target" onchange="findPath()"><option value="">--</option></select>
   <div id="path" style="margin-top:4px"></div></div>
-  <div class="sm" style="margin-top:14px">规则：持有≤10；每日按持有结算；相邻可攻，1级随时可进。推荐分=城池分+战略加成−难度惩罚（启发式，仅供参考）。</div>
+  <div class="sm" style="margin-top:14px">规则：持有≤10；每日按持有结算；相邻可攻；贴地图边缘的31城(含2-5等)随时可进。推荐分=城池分+战略加成−难度惩罚（启发式，仅供参考）。</div>
 </div>
 <div id="main"><div id="stage">
   <img id="mapimg" src="Map/map_crop.jpg" style="display:none">
@@ -66,6 +66,7 @@ const DATA = {"zones": {"1-1": {"level": 1, "x": 522, "y": 758, "m": "巨魔", "
 const Z = DATA.zones, EDGES = DATA.edges;
 const SCORE = {1:150,2:300,3:600,4:1200,5:2400,6:7200,7:21600,8:0};
 const LOCKSET = ['5-8','5-9','6-1','6-2','6-3','6-4','7-1','7-2','7-3'];
+const BORDER = ["1-1", "1-2", "1-3", "1-4", "1-5", "1-6", "1-7", "1-8", "1-9", "1-10", "1-11", "1-12", "1-13", "1-14", "1-15", "1-16", "1-17", "1-18", "1-19", "1-20", "2-1", "2-2", "2-4", "2-5", "2-10", "2-13", "2-15", "2-17", "2-18", "3-1", "3-4"];
 const LV_COLORS = {1:'#f4e04d',2:'#7ec8e3',3:'#4caf50',4:'#2e8b57',5:'#008080',6:'#e08020',7:'#b04010',8:'#d00000'};
 const G = {};
 for (const n in Z) G[n] = [];
@@ -134,7 +135,7 @@ function attackable(side){
   const res = new Set();
   for (const n in Z){
     if (state[n]===side || Z[n].level>ol) continue;
-    if (Z[n].level===1) { res.add(n); continue; }
+    if (BORDER.includes(n)) { res.add(n); continue; }
     if (own.some(m=>G[m].includes(n))) res.add(n);
   }
   return [...res];
@@ -144,7 +145,7 @@ function unlockValue(n){
   const ol=openLv(), mine=mineSet();
   let vals=[];
   for (const v of G[n]){
-    if (Z[v].level>ol || Z[v].level===1 || state[v]==='mine') continue;
+    if (Z[v].level>ol || BORDER.includes(v) || state[v]==='mine') continue;
     const already = mine.some(m=>G[m].includes(v));
     if (!already) vals.push([SCORE[Z[v].level], v]);
   }
@@ -218,7 +219,7 @@ function findPath(redraw=true){
     const pq=[];
     const push=(n,c,p)=>{ if(dist[n]===undefined||c<dist[n]){dist[n]=c;prev[n]=p;pq.push([c,n]);} };
     for (const n of mine) push(n,0,null);
-    for (const n in Z) if (Z[n].level===1 && !mine.has(n)) push(n, cost(n), 'ENTRY');
+    for (const n in Z) if (BORDER.includes(n) && !mine.has(n)) push(n, cost(n), 'ENTRY');
     while(pq.length){
       pq.sort((a,b)=>a[0]-b[0]);
       const [c,n]=pq.shift();
