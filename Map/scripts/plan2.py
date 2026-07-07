@@ -13,7 +13,7 @@ RANK = RU['monster_difficulty']['type_rank']
 def diff(n):
     r = RANK.get(Z[n]['monster'])
     return r if r else 5   # unrated mid
-WEEK_OPEN = {w: list(range(1, min(w+1,7)+1)) for w in range(1,7)}
+BORDER = set(json.load(open('/sessions/lucid-practical-feynman/mnt/outputs/border_zones.json')))
 
 def by_level(l): return [n for n in Z if Z[n]['level'] == l]
 
@@ -26,9 +26,8 @@ for l in range(1, 8):
 split['8-1'] = 'contested'
 
 def reachable(side, week):
-    open_lv = set(WEEK_OPEN[week])
-    allowed = {n for n in Z if Z[n]['level'] in open_lv and (split.get(n)==side or Z[n]['level']==1)}
-    starts = [n for n in allowed if Z[n]['level']==1 and split[n]==side]
+    allowed = {n for n in Z if Z[n]['open'] <= week and split.get(n)==side}
+    starts = [n for n in allowed if n in BORDER]
     seen = set(starts); st = list(starts)
     while st:
         u = st.pop()
@@ -41,7 +40,7 @@ plans = {}
 for side in 'WE':
     plans[side] = {}
     for wk in range(1,7):
-        pool = sorted([n for n in reachable(side, wk) if split.get(n) == side],
+        pool = sorted(reachable(side, wk),
                       key=lambda n: (-SCORE[Z[n]['level']], diff(n), n))
         hs = pool[:10]
         sc = sum(SCORE[Z[n]['level']] for n in hs)

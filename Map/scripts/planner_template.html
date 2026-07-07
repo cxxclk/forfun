@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>攻城战况计算器</title>
+<style>
+  body{margin:0;font-family:system-ui,'Microsoft YaHei',sans-serif;background:#1e2119;color:#e8e6d9;display:flex;height:100vh;overflow:hidden}
+  #side{width:clamp(330px,26vw,480px);padding:12px;background:#2d3226;overflow-y:auto;flex-shrink:0;font-size:13.5px;line-height:1.55}
+  #main{flex:1;overflow:auto;position:relative}
+  #stage{position:relative}
+  #stage img{display:block;user-select:none;pointer-events:none;opacity:.85}
+  svg{position:absolute;left:0;top:0}
+  h2{font-size:16px;margin:2px 0 8px;color:#a8c686}
+  h3{font-size:13.5px;margin:14px 0 4px;color:#a8c686;border-bottom:1px solid #4a5140;padding-bottom:2px}
+  button{margin:2px;padding:5px 9px;border:0;border-radius:6px;background:#5a7d4a;color:#fff;cursor:pointer;font-size:12.5px}
+  button.warn{background:#8a5a3a}
+  select,input[type=range]{background:#22261d;color:#eee;border:1px solid #4a5140;border-radius:4px;padding:3px}
+  .box{background:#22261d;border-radius:6px;padding:7px 9px;margin:6px 0;white-space:pre-wrap}
+  .mine{color:#7ec8ff}.enemy{color:#ff8080}.gold{color:#d4a017}.easy{color:#8fd06a}.hard{color:#e07070}
+  .sm{font-size:12px;color:#b9c4a5}
+  circle{cursor:pointer;stroke:#111;stroke-width:1.5}
+  circle.sel-path{stroke:#ffff00;stroke-width:4}
+  text{font-size:12px;font-weight:bold;fill:#fff;paint-order:stroke;stroke:#000;stroke-width:3px;pointer-events:none}
+  label{margin-right:8px}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  td,th{border:1px solid #4a5140;padding:3px 6px;text-align:left}
+  td:nth-child(1),td:nth-child(2),td:nth-child(3),th:nth-child(1),th:nth-child(2),th:nth-child(3){white-space:nowrap;width:1%}
+</style>
+</head>
+<body>
+<div id="side">
+  <h2>战况计算器</h2>
+  <div class="sm">点击地图节点标记归属。数据：85城已校对邻接 + 怪物难度。</div>
+  <div style="margin:8px 0">
+    当前周 <select id="week" onchange="recalc()">
+      <option value="1">第1周(1级+贴边2级)</option><option value="2">第2周(+余2级/3级)</option>
+      <option value="3">第3周(+4级)</option><option value="4">第4周(+5级)</option>
+      <option value="5">第5周(+6级)</option><option value="6" selected>第6周(+7级)</option>
+      <option value="7">终局(+8-1)</option>
+    </select><br>
+    点击设为：
+    <label><input type="radio" name="paint" value="mine" checked> <span class="mine">我方</span></label>
+    <label><input type="radio" name="paint" value="enemy"> <span class="enemy">敌方</span></label>
+    <label><input type="radio" name="paint" value="none"> 中立</label><br>
+    <button onclick="clearAll()" class="warn">清空</button>
+    <button onclick="exportState()">导出战况</button>
+    <button onclick="importState()">导入</button>
+    缩放 <input type="range" id="zoom" min="0.4" max="3" step="0.05" value="1" style="width:90px">
+  </div>
+  <div id="score" class="box"></div>
+  <h3>推荐进攻（前8）</h3><div id="reco" class="box sm"></div>
+  <h3>锁死进度</h3><div id="lock" class="box sm"></div>
+  <h3>防守前线</h3><div id="def" class="box sm"></div>
+  <h3>寻路</h3>
+  <div class="sm">目标 <select id="target" onchange="findPath()"><option value="">--</option></select>
+  <div id="path" style="margin-top:4px"></div></div>
+  <div class="sm" style="margin-top:14px">规则：持有≤10；每日按持有结算；相邻可攻；开放按地图颜色：第1周=1级+9座贴边2级，第2周=其余2级+3级，此后每周+1级，8-1最后开。贴边城开放后随时可进。推荐分=城池分+战略加成−难度惩罚（启发式，仅供参考）。</div>
+</div>
+<div id="main"><div id="stage">
+  <img id="mapimg" src="Map/map_crop.jpg" style="display:none">
+  <canvas id="cv"></canvas>
+  <svg id="ov"></svg>
+</div></div>
+<script>
+const DATA = __DATA__;
+const Z = DATA.zones, EDGES = DATA.edges;
+const SCORE = {1:150,2:300,3:600,4:1200,5:2400,6:7200,7:21600,8:0};
+const LOCKSET = ['5-8','5-9','6-1','6-2','6-3','6-4','7-1','7-2','7-3'];
+const BORDER = ["1-1", "1-2", "1-3", "1-4", "1-5", "1-6", "1-7", "1-8", "1-9", "1-10", "1-11", "1-12", "1-13", "1-14", "1-15", "1-16", "1-17", "1-18", "1-19", "1-20", "2-1", "2-2", "2-4", "2-5", "2-10", "2-13", "2-15", "2-17", "2-18", "3-1", "3-4"];
+const LV_COLORS = {1:'#f4e04d',2:'#7ec8e3',3:'#4caf50',4:'#2e8b57',5:'#008080',6:'#e08020',7:'#b04010',8:'#d00000'};
+const G = {};
+for (const n in Z) G[n] = [];
+for (const [a,b] of EDGES){ G[a].push(b); G[b].push(a); }
+
+let state = {};   // name -> 'mine' | 'enemy'
+try { state = JSON.parse(localStorage.getItem('warstate')||'{}'); } catch(e){}
+let pathNodes = [];
+
+const svg = document.getElementById('ov');
+const img = document.getElementById('mapimg');
+const cv = document.getElementById('cv');
+img.onload = () => {
+  cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+  cv.getContext('2d').drawImage(img,0,0);
+  cv.getContext('2d').fillStyle = 'rgba(20,22,16,0.45)';
+  cv.getContext('2d').fillRect(0,0,cv.width,cv.height);
+  svg.setAttribute('width', img.naturalWidth);
+  svg.setAttribute('height', img.naturalHeight);
+  fitZoom(); draw();
+};
+if (img.complete && img.naturalWidth) img.onload();
+
+function curWk(){ return parseInt(document.getElementById('week').value); }
+function av(n){ return (Z[n].o||8) <= curWk(); }
+function diff(n){ return Z[n].d || 5; }
+function persist(){ localStorage.setItem('warstate', JSON.stringify(state)); }
+
+function draw(){
+  svg.innerHTML='';
+  // path highlight lines
+  for (let i=0;i+1<pathNodes.length;i++){
+    const a=Z[pathNodes[i]], b=Z[pathNodes[i+1]];
+    const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',a.x);l.setAttribute('y1',a.y);l.setAttribute('x2',b.x);l.setAttribute('y2',b.y);
+    l.setAttribute('stroke','#ffff00');l.setAttribute('stroke-width',5);l.setAttribute('stroke-dasharray','8,5');
+    svg.appendChild(l);
+  }
+  for (const n in Z){
+    const z=Z[n], st=state[n];
+    const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',z.x);c.setAttribute('cy',z.y);
+    c.setAttribute('r', st? 13 : 9);
+    c.setAttribute('fill', st==='mine' ? '#2a7fff' : st==='enemy' ? '#e02020' : LV_COLORS[z.level]);
+    c.setAttribute('opacity', av(n) ? 1 : 0.35);
+    if (pathNodes.includes(n)) c.classList.add('sel-path');
+    c.addEventListener('click',()=>{
+      const mode=document.querySelector('input[name=paint]:checked').value;
+      if (mode==='none') delete state[n]; else state[n]= (state[n]===mode? undefined : mode);
+      if (!state[n]) delete state[n];
+      persist(); recalc();
+    });
+    svg.appendChild(c);
+    const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',z.x+11);t.setAttribute('y',z.y+4);
+    t.textContent=n; svg.appendChild(t);
+  }
+}
+
+function mineSet(){ return Object.keys(state).filter(n=>state[n]==='mine'); }
+function enemySet(){ return Object.keys(state).filter(n=>state[n]==='enemy'); }
+
+function attackable(side){
+  const own = side==='mine'? mineSet() : enemySet();
+  const res = new Set();
+  for (const n in Z){
+    if (state[n]===side || !av(n)) continue;
+    if (BORDER.includes(n)) { res.add(n); continue; }
+    if (own.some(m=>G[m].includes(n))) res.add(n);
+  }
+  return [...res];
+}
+
+function unlockValue(n){
+  const mine=mineSet();
+  let vals=[];
+  for (const v of G[n]){
+    if (!av(v) || BORDER.includes(v) || state[v]==='mine') continue;
+    const already = mine.some(m=>G[m].includes(v));
+    if (!already) vals.push([SCORE[Z[v].level], v]);
+  }
+  vals.sort((a,b)=>b[0]-a[0]);
+  const top = vals.slice(0,4);
+  return [0.5*top.reduce((s,x)=>s+x[0],0), top.map(x=>x[1])];
+}
+function stratBonus(n, wk){
+  let b=0, why=[];
+  const [ub,uz]=unlockValue(n);
+  if (ub>0){ b+=ub; why.push('解锁'+uz.join('/')); }
+  if (LOCKSET.includes(n)){ b+=4000; why.push('锁死组合'); }
+  if (['5-8','5-9'].includes(n) && wk<=5){ b+=3000; why.push('7级环门户'); }
+  if (G[n].includes('8-1')){ b+=2000; why.push('8-1入口'); }
+  if (diff(n)<=2){ b+=400; why.push('易怪'); }
+  if (diff(n)>=7){ b-=800; why.push('难怪'); }
+  if (state[n]==='enemy'){ b-=1500; why.push('需抢夺'); }
+  return [b, why];
+}
+
+function recalc(){
+  const wk=parseInt(document.getElementById('week').value);
+  const mine=mineSet(), enemy=enemySet();
+  const ms=mine.reduce((s,n)=>s+SCORE[Z[n].level],0);
+  const es=enemy.reduce((s,n)=>s+SCORE[Z[n].level],0);
+  document.getElementById('score').innerHTML =
+    `<span class="mine">我方 ${mine.length} 城</span>${mine.length>10?' <span class="hard">⚠超10城上限!</span>':''}，日结算 <b>${ms}</b>\n`+
+    `<span class="enemy">敌方 ${enemy.length} 城</span>${enemy.length>10?' ⚠':''}，日结算 <b>${es}</b>`;
+
+  // recommendations
+  const tg = attackable('mine').map(n=>{
+    const [b,why]=stratBonus(n,wk);
+    return {n, s:SCORE[Z[n].level]+b, why};
+  }).sort((a,b)=>b.s-a.s).slice(0,8);
+  document.getElementById('reco').innerHTML = tg.length ?
+    '<table><tr><th>城</th><th>怪</th><th>分</th><th>理由</th></tr>'+
+    tg.map(t=>`<tr><td><b>${t.n}</b></td><td class="${diff(t.n)<=2?'easy':diff(t.n)>=7?'hard':''}">${Z[t.n].m}${diff(t.n)}</td><td>${SCORE[Z[t.n].level]}</td><td>${t.why.join('、')||'-'}</td></tr>`).join('')+'</table>'
+    : '无可攻目标（标记我方持有城后计算）';
+
+  // lockdown
+  const lk = LOCKSET.map(n=>{
+    const st=state[n]==='mine'?'<span class="mine">我</span>':state[n]==='enemy'?'<span class="enemy">敌</span>':'—';
+    return `${n}${st}`;
+  }).join('  ');
+  const haveL = LOCKSET.filter(n=>state[n]==='mine').length;
+  const acc8 = ['7-1','7-2','7-3'].every(n=>state[n]==='mine');
+  document.getElementById('lock').innerHTML = `${lk}\n进度 <b>${haveL}/9</b>` + (acc8?'　<span class="gold">★已垄断8-1入口</span>':'');
+
+  // defense frontier
+  const front = mine.filter(n=>G[n].some(v=>state[v]==='enemy'));
+  const exposed = mine.filter(n=>!front.includes(n)&&G[n].some(v=>!state[v]&&av(v)));
+  document.getElementById('def').innerHTML =
+    (front.length? `<span class="hard">直面敌军：${front.join('、')}</span>\n`:'')+
+    (exposed.length? `邻接中立(可被借道)：${exposed.join('、')}`:'') || '无前线压力';
+
+  // target dropdown
+  const sel=document.getElementById('target');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">--</option>'+Object.keys(Z).filter(n=>state[n]!=='mine').sort((a,b)=>Z[b].level-Z[a].level||a.localeCompare(b)).map(n=>`<option ${n===cur?'selected':''}>${n}</option>`).join('');
+  findPath(false);
+  draw();
+}
+
+function findPath(redraw=true){
+  const t=document.getElementById('target').value;
+  pathNodes=[];
+  if (t){
+    const mine=new Set(mineSet());
+    // dijkstra: start = mine nodes (cost0) + all L1 (entry cost)
+    const dist={}, prev={};
+    const pq=[];
+    const push=(n,c,p)=>{ if(dist[n]===undefined||c<dist[n]){dist[n]=c;prev[n]=p;pq.push([c,n]);} };
+    for (const n of mine) push(n,0,null);
+    for (const n in Z) if (BORDER.includes(n) && av(n) && !mine.has(n)) push(n, cost(n), 'ENTRY');
+    while(pq.length){
+      pq.sort((a,b)=>a[0]-b[0]);
+      const [c,n]=pq.shift();
+      if (c>dist[n]) continue;
+      if (n===t) break;
+      for (const v of G[n]){
+        if (Z[v].level>ol) continue;
+        push(v, c+cost(v), n);
+      }
+    }
+    if (dist[t]!==undefined){
+      let n=t; const p=[];
+      while(n && n!=='ENTRY'){ p.unshift(n); n=prev[n]; }
+      pathNodes=p;
+      const steps=p.filter(n=>!mine.has(n));
+      document.getElementById('path').innerHTML =
+        `需打 <b>${steps.length}</b> 城：`+steps.map(n=>`${n}(${Z[n].m}${diff(n)}${state[n]==='enemy'?'<span class="enemy">敌</span>':''})`).join(' → ');
+    } else {
+      document.getElementById('path').textContent='本周等级限制下不可达';
+    }
+  } else document.getElementById('path').textContent='';
+  if (redraw) draw();
+}
+function cost(n){
+  let c = diff(n);
+  if (state[n]==='enemy') c += 12;
+  return c;
+}
+
+function clearAll(){ if(confirm('清空所有标记？')){ state={}; persist(); recalc(); } }
+function exportState(){
+  const s=JSON.stringify({week:document.getElementById('week').value, state});
+  navigator.clipboard.writeText(s).then(()=>alert('战况已复制到剪贴板'));
+}
+function importState(){
+  const s=prompt('粘贴战况字符串');
+  if(!s) return;
+  try{ const o=JSON.parse(s); state=o.state||{}; if(o.week)document.getElementById('week').value=o.week; persist(); recalc(); }
+  catch(e){ alert('格式错误'); }
+}
+function applyZoom(){
+  document.getElementById('stage').style.zoom = document.getElementById('zoom').value;
+}
+function fitZoom(){
+  if (!img.naturalWidth) return;
+  const main = document.getElementById('main');
+  const s = Math.min(main.clientWidth/img.naturalWidth, main.clientHeight/img.naturalHeight);
+  document.getElementById('zoom').value = Math.max(0.4, Math.min(3, s)).toFixed(2);
+  applyZoom();
+}
+document.getElementById('zoom').addEventListener('input', applyZoom);
+window.addEventListener('resize', fitZoom);
+recalc();
+</script>
+</body>
+</html>
